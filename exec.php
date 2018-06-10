@@ -77,12 +77,18 @@ try {
 		}
 		exit(1);
 	}
-	$programs = loadRecorded();
+	echo "Get recorded programs.\n";
+	$programs = loadRecorded(true);
 	$count = 0;
-
+	echo "Found ".count($programs)." programs.\n";
 	foreach ($programs as &$program) {
 		if (!property_exists($program, 'isTranscoded')) {
 			$program->isTranscoded = false;
+		}
+		if (strpos($program->recorded, '.ts') !== false) {
+			$program->isTranscoded = false;
+		} else {
+			$program->isTranscoded = true;
 		}
 		if ($program->isTranscoded) {
 			// 変換済スルー
@@ -90,6 +96,7 @@ try {
 		}
 		if (!file_exists($program->recorded)) {
 			// ファイル存在しない
+			echo "Cant find recorded file.\n";
 			continue;
 		}
 		// 未変換program
@@ -120,7 +127,8 @@ try {
 			// JSONのisTranscodedを立てる
 			// JSON読み込みからここまでの間に更新されてるかも?
 			$oldFile = $program->recorded;
-			$relProgs = loadRecorded();
+			$relProgs = loadRecorded(true);
+			/*
 			foreach ($relProgs as &$relProg) {
 				if ($program->id === $relProg->id) {
 					// IDマッチで更新
@@ -146,6 +154,7 @@ try {
 					break;
 				}
 			}
+			*/
 		} else {
 			// 異常終了
 			echo "Error: can't transcode file.\n";
@@ -172,7 +181,9 @@ function trans($from, $to, $fullHd, $sd) {
 	$uuid = uniqid();
 	$tmpTo = dirname($from).'/'.$uuid.'.mp4';
 	$capFile = dirname($from).'/'.$uuid;
-	$caption = exportCaption($from, $capFile);
+	//$caption = exportCaption($from, $capFile);
+	$caption = false;
+	$keyint = 30;
 	if ($caption) {
 		$md5 = md5($to);
 		$split = array();
@@ -222,6 +233,7 @@ function trans($from, $to, $fullHd, $sd) {
 		$deblock = '0,1';
 		$vf = 'bwdif=1:-1:1,hqdn3d';
 		$qcomp = '0.78';
+		$keyint = 60;
 	} else {
 		$bufsize = 10234;
 		$deblock = '1,1';
@@ -266,9 +278,10 @@ function trans($from, $to, $fullHd, $sd) {
 		.'nr='.$nr.':aq-mode=2:aq-strength='.$aq.':psy=0:'
 		.'deblock='.$deblock.':ref='.$ref.':scenecut='.$sc.':'
 		.'crf='.$crf.':b-adapt=2:b-pyramid:8x8dct:mixed-refs:'
-		.'rc-lookahead=120:direct=auto:weightp=2:'
+		.'rc-lookahead='.($keyint * 2).':direct=auto:weightp=2:'
 		.'chroma-qp-offset=1:weightb=1:'
-		.'trellis=1:qpmin='.$qpmin.':qpstep=16:keyint=120:min-keyint=30:'
+		.'trellis=1:qpmin='.$qpmin.':qpstep=16:keyint='
+		.$keyint.':min-keyint=8:'
 		.'mbtree=1:me=umh:subme=8:merange='.$merange.':'
 		.'vbv-maxrate='.$maxrate.':vbv-bufsize='.$bufsize.':'
 		.'colormatrix=bt709:colorprim=bt709:transfer=bt709 '
@@ -302,17 +315,11 @@ function loadRecorded($fromHttp = false) {
 }
 
 function splitTs($file) {
-	echo "Split TS file\n";
+	echo "Copy TS file\n";
 	$md5 = md5($file);
-	if (!file_exists(WORKING_DIR.$md5)) {
-		mkdir(WORKING_DIR.$md5);
-	}
-	$command = TSSPLITTER_BINARY.' "'.WORKING_DIR.$md5.'" "'.$file.'" 2>/dev/null';
-	exec($command);
-	$command = 'ls -S '.WORKING_DIR.$md5.'|grep -e ".ts" -e ".m2ts"|head -n 1';
-	exec($command, $output);
-	if (isset($output[0]) && file_exists(WORKING_DIR.$md5.'/'.$output[0])) {
-		return WORKING_DIR.$md5.'/'.$output[0];
+	$tmpFile = WORKING_DIR.$md5.'.ts';
+	if (copy($file, $tmpFile)) {
+		return $tmpFile;
 	}
 	return null;
 }
